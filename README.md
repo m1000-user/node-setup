@@ -25,13 +25,25 @@
 
 ### 🚀 Инструкция по запуску
 
-    ```git clone https://github.com/x1roko/node-setup.git```
+1. Клонируйте репозиторий:
+\`\`\`bash
+git clone https://github.com/x1roko/node-setup.git
+\`\`\`
 
-    ```cd node-setup```
+2. Перейдите в папку проекта:
+\`\`\`bash
+cd node-setup
+\`\`\`
 
-    ```chmod +x install.sh```
+3. Дайте права на выполнение:
+\`\`\`bash
+chmod +x install.sh
+\`\`\`
 
-     ```./install.sh```
+4. Запустите установку:
+\`\`\`bash
+./install.sh
+\`\`\`
 
 ### ⌨️ Параметры ввода
 

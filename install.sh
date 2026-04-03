@@ -122,7 +122,7 @@ services:
         hard: 1048576
     environment:
       - NODE_PORT=2222
-      - SECRET_KEY=$SECRET_KEY
+      - SECRET_KEY="$SECRET_KEY"
 EOF
 
 cd /opt/remnanode && docker compose up -d
@@ -136,15 +136,16 @@ sudo ufw allow 8443/tcp
 sudo ufw allow 9443/tcp
 sudo ufw --force enable
 
-echo "--- 8. Установка WARP CLI  ---"
-curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > install-warp-cli.sh
-chmod +x install-warp-cli.sh
+echo "--- [8/8] Установка WARP CLI (ТРЕБУЕТСЯ ВАШЕ УЧАСТИЕ) ---"
+echo "СЕЙЧАС ОТКРОЕТСЯ МЕНЮ УСТАНОВКИ WARP."
+echo "1. Выберите пункт '1' (Install and configure)"
+echo "2. Нажмите Enter, когда спросит про порт (по умолчанию будет 40000)"
+echo "Нажмите любую клавишу, чтобы начать установку WARP..."
+read -n 1 -s
 
-printf "\n40000\n" | ./install-warp-cli.sh
-
-echo "--- 9. Проверка WARP ---"
-
-curl -x socks5://127.0.0.1:40000 ifconfig.me || echo "WARP еще поднимается..."
+curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
+chmod +x warp.sh
+./warp.sh
 
 echo "------------------------------------------------"
 echo "ВСЕ ГОТОВО!"
