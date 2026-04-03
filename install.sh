@@ -136,16 +136,16 @@ sudo ufw allow 8443/tcp
 sudo ufw allow 9443/tcp
 sudo ufw --force enable
 
-echo "--- [8/8] Установка WARP CLI (ТРЕБУЕТСЯ ВАШЕ УЧАСТИЕ) ---"
-echo "СЕЙЧАС ОТКРОЕТСЯ МЕНЮ УСТАНОВКИ WARP."
-echo "1. Выберите пункт '1' (Install and configure)"
-echo "2. Нажмите Enter, когда спросит про порт (по умолчанию будет 40000)"
-echo "Нажмите любую клавишу, чтобы начать установку WARP..."
-read -n 1 -s
+# echo "--- [8/8] Установка WARP CLI (ТРЕБУЕТСЯ ВАШЕ УЧАСТИЕ) ---"
+# echo "СЕЙЧАС ОТКРОЕТСЯ МЕНЮ УСТАНОВКИ WARP."
+# echo "1. Выберите пункт '1' (Install and configure)"
+# echo "2. Нажмите Enter, когда спросит про порт (по умолчанию будет 40000)"
+# echo "Нажмите любую клавишу, чтобы начать установку WARP..."
+# read -n 1 -s
 
-curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
-chmod +x warp.sh
-./warp.sh
+# curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
+# chmod +x warp.sh
+# ./warp.sh
 
 echo "------------------------------------------------"
 echo "ВСЕ ГОТОВО!"
