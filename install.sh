@@ -62,7 +62,7 @@ server {
 }
 
 server {
-    listen 443 ssl;
+    listen 443 ;
     server_name $DOMAIN;
 
     ssl_certificate /etc/nginx/certs/fullchain.pem;
