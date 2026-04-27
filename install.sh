@@ -1,48 +1,84 @@
 #!/bin/bash
 
-# Останавливаем скрипт при ошибках
+# Exit on error
 set -e
 
-# --- СБОР ДАННЫХ ---
-read -p "Введите ваш Email (для SSL): " EMAIL
-read -p "Введите ваш Домен (например, node.example.com): " DOMAIN
-read -p "Введите SECRET_KEY (из панели): " SECRET_KEY
+# --- SERVICES LIST ---
+# Format: "Name|Image|Internal_Port"
+SERVICES=(
+    "filebrowser|filebrowser/filebrowser|80"
+    "memos|neosmemo/memos:stable|5230"
+    "pingvin-share|stonith404/pingvin-share|3000"
+    "excalidraw|excalidraw/excalidraw|80"
+    "searxng|searxng/searxng|8080"
+    "sharry|jlesage/sharry|9090"
+    "audiobookshelf|advplyr/audiobookshelf|80"
+    "kavita|jvmilazz0/kavita|5000"
+    "kodbox|kodcloud/kodbox|80"
+    "navidrome|deluan/navidrome|4533"
+    "gitea|gitea/gitea|3000"
+)
+
+# --- DATA COLLECTION ---
+read -p "Enter your Email (for SSL): " EMAIL
+read -p "Enter your Domain (e.g., node.example.com): " DOMAIN
+read -p "Enter SECRET_KEY (from panel): " SECRET_KEY
+
+echo "------------------------------------------------"
+echo "Select the service you want to install:"
+for i in "${!SERVICES[@]}"; do
+    NAME=$(echo "${SERVICES[$i]}" | cut -d'|' -f1)
+    echo "[$((i+1))] $NAME"
+done
+
+read -p "Service number (Press Enter for a random one): " CHOICE
+
+if [ -z "$CHOICE" ]; then
+    RAND_IDX=$(( RANDOM % ${#SERVICES[@]} ))
+    SELECTED_SERVICE="${SERVICES[$RAND_IDX]}"
+else
+    SELECTED_SERVICE="${SERVICES[$((CHOICE-1))]}"
+fi
+
+SERVICE_NAME=$(echo "$SELECTED_SERVICE" | cut -d'|' -f1)
+SERVICE_IMAGE=$(echo "$SELECTED_SERVICE" | cut -d'|' -f2)
+SERVICE_PORT=$(echo "$SELECTED_SERVICE" | cut -d'|' -f3)
+
+echo "--- Installing service: $SERVICE_NAME ---"
 echo "------------------------------------------------"
 
-echo "--- 1. Установка Docker и зависимостей ---"
+echo "--- 1. Installing Docker and Dependencies ---"
 sudo curl -fsSL https://get.docker.com | sh
 sudo apt-get update
 sudo apt-get install -y cron socat curl ufw expect
 
-echo "--- 2. Установка acme.sh ---"
+echo "--- 2. Installing acme.sh ---"
 curl https://get.acme.sh | sh -s email=$EMAIL
 export LE_WORKING_DIR="${HOME}/.acme.sh"
-# Настраиваем алиас для текущей сессии
 alias acme.sh="${HOME}/.acme.sh/acme.sh"
-
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 
-# Подготовка папок
+# Preparing directories
 mkdir -p /opt/remnanode/nginx
-mkdir -p /opt/fluffychat-web
+mkdir -p "/opt/$SERVICE_NAME"
 
-echo "--- 3. Выпуск SSL сертификата ---"
+echo "--- 3. Issuing SSL Certificate ---"
 ~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN \
     --key-file /opt/remnanode/nginx/privkey.key \
     --fullchain-file /opt/remnanode/nginx/fullchain.pem \
     --alpn --tlsport 8443
 
-echo "--- 4. Настройка сети и FluffyChat ---"
+echo "--- 4. Setting up Network and $SERVICE_NAME ---"
 docker network create remna-network || true
 
-cat <<EOF > /opt/fluffychat-web/docker-compose.yml
+cat <<EOF > "/opt/$SERVICE_NAME/docker-compose.yml"
 services:
-  element-web:
-    container_name: fluffy-web
-    image: aceberg/fluffychat
+  $SERVICE_NAME:
+    container_name: $SERVICE_NAME
+    image: $SERVICE_IMAGE
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "80:$SERVICE_PORT"
     networks:
       - remna-network
 
@@ -51,9 +87,10 @@ networks:
     external: true
 EOF
 
-cd /opt/fluffychat-web && docker compose up -d
+cd "/opt/$SERVICE_NAME" && docker compose up -d
 
-echo "--- 5. Настройка Nginx Proxy ---"
+echo "--- 5. Configuring Nginx Proxy ---"
+
 cat <<EOF > /opt/remnanode/nginx/nginx.conf
 server {
     listen 80;
@@ -69,7 +106,7 @@ server {
     ssl_certificate_key /etc/nginx/certs/privkey.key;
 
     location / {
-        proxy_pass http://fluffy-web:80;
+        proxy_pass http://$SERVICE_NAME:$SERVICE_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -102,7 +139,8 @@ EOF
 
 cd /opt/remnanode/nginx && docker compose up -d
 
-echo "--- 6. Установка Remnanode ---"
+echo "--- 6. Installing Remnanode ---"
+
 cat <<EOF > /opt/remnanode/docker-compose.yml
 services:
   remnanode:
@@ -127,30 +165,22 @@ EOF
 
 cd /opt/remnanode && docker compose up -d
 
-echo "--- 7. Настройка Firewall ---"
+echo "--- 7. Configuring Firewall ---"
+
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw allow 2222/tcp
-sudo ufw allow 8443/tcp
-sudo ufw allow 9443/tcp
 sudo ufw --force enable
 
-# echo "--- [8/8] Установка WARP CLI (ТРЕБУЕТСЯ ВАШЕ УЧАСТИЕ) ---"
-# echo "СЕЙЧАС ОТКРОЕТСЯ МЕНЮ УСТАНОВКИ WARP."
-# echo "1. Выберите пункт '1' (Install and configure)"
-# echo "2. Нажмите Enter, когда спросит про порт (по умолчанию будет 40000)"
-# echo "Нажмите любую клавишу, чтобы начать установку WARP..."
-# read -n 1 -s
-
-# curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
-# chmod +x warp.sh
-# ./warp.sh
+echo "--- [8/8] Installing WARP CLI ---"
+curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
+chmod +x warp.sh
+echo "To install WARP, run: ./warp.sh"
 
 echo "------------------------------------------------"
-echo "ВСЕ ГОТОВО!"
-echo "Домен: $DOMAIN"
-echo "Порт Remnanode: 2222"
-echo "Proxy порт: 9443"
-echo "WARP SOCKS5: 127.0.0.1:40000"
+echo "INSTALLATION COMPLETE!"
+echo "Selected Service: $SERVICE_NAME"
+echo "Domain: $DOMAIN"
+echo "Remnanode Port: 2222"
 echo "------------------------------------------------"
