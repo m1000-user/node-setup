@@ -17,6 +17,7 @@ SERVICES=(
     "kodbox|kodcloud/kodbox|80"
     "navidrome|deluan/navidrome|4533"
     "gitea|gitea/gitea|3000"
+    "fluffy-web|aceberg/fluffychat|80"
 )
 
 # --- DATA COLLECTION ---
