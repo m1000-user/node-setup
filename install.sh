@@ -177,7 +177,7 @@ sudo ufw --force enable
 echo "--- [8/8] Installing WARP CLI ---"
 curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
 chmod +x warp.sh
-echo "To install WARP, run: ./warp.sh"
+echo "To install WARP, run: /opt/remnanode/warp.sh"
 
 echo "------------------------------------------------"
 echo "INSTALLATION COMPLETE!"
