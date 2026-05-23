@@ -175,7 +175,7 @@ fi
 
 echo "Configuring automatic renewal via crontab..."
 
-~/.acme.sh/acme.sh --update-market --install-cert -d "$DOMAIN" \
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
     --key-file "$CERT_KEY" \
     --fullchain-file "$CERT_PEM" \
     --pre-hook "$PRE_HOOK" \
