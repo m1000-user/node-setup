@@ -101,8 +101,7 @@ echo "--- 3. Issuing SSL Certificate ---"
 ~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN \
     --key-file /opt/remnanode/nginx/privkey.key \
     --fullchain-file /opt/remnanode/nginx/fullchain.pem \
-    --alpn --tlsport 8443 \
-    --reloadcmd "docker exec remnawave-proxy nginx -s reload"
+    --alpn --tlsport 8443 
 
 echo "--- 4. Setting up  $SERVICE_NAME ---"
 
