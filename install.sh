@@ -3,6 +3,8 @@
 # Exit on error
 set -e
 
+ENV_FILE=".env"
+
 # --- SERVICES LIST ---
 # Format: "Name|Image|Internal_Port"
 SERVICES=(
@@ -20,10 +22,42 @@ SERVICES=(
     "fluffy-web|aceberg/fluffychat|80"
 )
 
+# Load existing .env if it exists
+if [ -f "$ENV_FILE" ]; then
+    # Export variables but ignore comments
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+fi
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+ask_variable() {
+    local var_name=$1
+    local prompt_text=$2
+    local current_val=${!var_name}
+
+    if [ ! -z "$current_val" ]; then
+        read -p "$prompt_text (Current: $current_val). Use previous? [y/n]: " use_old
+        if [[ "$use_old" =~ ^[Nn]$ ]]; then
+            read -p "Enter new $var_name: " new_val
+            eval "$var_name=\"$new_val\""
+        fi
+    else
+        read -p "Enter $prompt_text: " new_val
+        eval "$var_name=\"$new_val\""
+    fi
+}
+
 # --- DATA COLLECTION ---
-read -p "Enter your Email (for SSL): " EMAIL
-read -p "Enter your Domain (e.g., node.example.com): " DOMAIN
-read -p "Enter SECRET_KEY (from panel): " SECRET_KEY
+echo "--- Configuration ---"
+ask_variable "EMAIL" "Email (for SSL)"
+ask_variable "DOMAIN" "Domain (e.g., node.example.com)"
+ask_variable "SECRET_KEY" "SECRET_KEY (from panel)"
+
+cat <<EOF > "$ENV_FILE"
+EMAIL=$EMAIL
+DOMAIN=$DOMAIN
+SECRET_KEY=$SECRET_KEY
+EOF
 
 echo "------------------------------------------------"
 echo "Select the service you want to install:"
@@ -67,10 +101,10 @@ echo "--- 3. Issuing SSL Certificate ---"
 ~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN \
     --key-file /opt/remnanode/nginx/privkey.key \
     --fullchain-file /opt/remnanode/nginx/fullchain.pem \
-    --alpn --tlsport 8443
+    --alpn --tlsport 8443 \
+    --reloadcmd "docker exec remnawave-proxy nginx -s reload"
 
-echo "--- 4. Setting up Network and $SERVICE_NAME ---"
-docker network create remna-network || true
+echo "--- 4. Setting up  $SERVICE_NAME ---"
 
 cat <<EOF > "/opt/$SERVICE_NAME/docker-compose.yml"
 services:
@@ -79,13 +113,7 @@ services:
     image: $SERVICE_IMAGE
     restart: unless-stopped
     ports:
-      - "80:$SERVICE_PORT"
-    networks:
-      - remna-network
-
-networks:
-  remna-network:
-    external: true
+      - "127.0.0.1:8080:$SERVICE_PORT"
 EOF
 
 cd "/opt/$SERVICE_NAME" && docker compose up -d
@@ -93,6 +121,11 @@ cd "/opt/$SERVICE_NAME" && docker compose up -d
 echo "--- 5. Configuring Nginx Proxy ---"
 
 cat <<EOF > /opt/remnanode/nginx/nginx.conf
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80;
     server_name $DOMAIN;
@@ -100,18 +133,21 @@ server {
 }
 
 server {
-    listen 443 ;
+    listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
     server_name $DOMAIN;
+    http2 on;
 
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.key;
 
     location / {
-        proxy_pass http://$SERVICE_NAME:$SERVICE_PORT;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
     }
 }
 EOF
@@ -122,20 +158,13 @@ services:
     image: nginx:latest
     container_name: remnawave-proxy
     restart: always
-    ports:
-      - "9443:443"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
       - ./privkey.key:/etc/nginx/certs/privkey.key:ro
-    networks:
-      - remna-network
-
-networks:
-  remna-network:
-    external: true
+      - /dev/shm:/dev/shm:rw
+    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
 EOF
 
 cd /opt/remnanode/nginx && docker compose up -d
@@ -155,6 +184,7 @@ services:
     volumes:
       - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
       - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
     ulimits:
       nofile:
         soft: 1048576
@@ -175,9 +205,8 @@ sudo ufw allow 2222/tcp
 sudo ufw --force enable
 
 echo "--- [8/8] Installing WARP CLI ---"
-curl -L https://raw.githubusercontent.com/Skrepysh/tools/refs/heads/main/install-warp-cli.sh > warp.sh
 chmod +x warp.sh
-echo "To install WARP, run: /opt/remnanode/warp.sh"
+$SCRIPT_DIR/warp.sh
 
 echo "------------------------------------------------"
 echo "INSTALLATION COMPLETE!"
