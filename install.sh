@@ -297,7 +297,7 @@ echo "Selected Service: $SERVICE_NAME"
 echo "Domain: $DOMAIN"
 echo "Remnanode Port: 2222"
 echo "Checking WARP SOCKS5 proxy..."
-curl -x socks5://127.0.0.1:40000 ifconfig.me
+curl -x socks://127.0.0.1:40000 ifconfig.me
 echo ""
 echo "------------------------------------------------"
 read -p "Do you want to generate a ready-to-use Xray-core server config (VLESS+REALITY)? [y/N]: " SHOW_CONFIG
