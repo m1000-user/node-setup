@@ -128,7 +128,26 @@ echo "--- 2. Installing acme.sh ---"
 curl https://get.acme.sh | sh -s email=$EMAIL
 export LE_WORKING_DIR="${HOME}/.acme.sh"
 alias acme.sh="${HOME}/.acme.sh/acme.sh"
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+
+echo "Select default Certificate Authority (CA):"
+echo "1) Let's Encrypt"
+echo "2) ZeroSSL"
+read -p "Enter choice [1-2]: " CA_CHOICE
+
+case $CA_CHOICE in
+    1)
+        echo "Setting default CA to Let's Encrypt..."
+        ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+        ;;
+    2)
+        echo "Setting default CA to ZeroSSL..."
+        ~/.acme.sh/acme.sh --set-default-ca --server zerossl
+        ;;
+    *)
+        echo "Invalid choice. Defaulting to Let's Encrypt to be safe."
+        ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+        ;;
+esac
 
 # Preparing directories
 mkdir -p /opt/remnanode/nginx
