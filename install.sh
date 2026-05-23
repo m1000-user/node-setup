@@ -135,10 +135,38 @@ mkdir -p /opt/remnanode/nginx
 mkdir -p "/opt/$SERVICE_NAME"
 
 echo "--- 3. Issuing SSL Certificate ---"
-~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN \
-    --key-file /opt/remnanode/nginx/privkey.key \
-    --fullchain-file /opt/remnanode/nginx/fullchain.pem \
-    --alpn --tlsport 8443 
+
+CERT_KEY="/opt/remnanode/nginx/privkey.key"
+CERT_PEM="/opt/remnanode/nginx/fullchain.pem"
+
+PRE_HOOK="ufw allow 8443/tcp && ufw reload"
+POST_HOOK="ufw delete allow 8443/tcp && ufw reload"
+
+if [ -f "$CERT_PEM" ] && [ -f "$CERT_KEY" ]; then
+    echo "SSL certificates already exist at $CERT_PEM. Skipping initial issuance."
+else
+    echo "No existing certificates found."
+
+    ~/.acme.sh/acme.sh --issue --standalone -d "$DOMAIN" \
+        --key-file "$CERT_KEY" \
+        --fullchain-file "$CERT_PEM" \
+        --alpn --tlsport 8443
+    
+fi
+
+echo "Configuring automatic renewal via crontab..."
+
+~/.acme.sh/acme.sh --update-market --install-cert -d "$DOMAIN" \
+    --key-file "$CERT_KEY" \
+    --fullchain-file "$CERT_PEM" \
+    --pre-hook "$PRE_HOOK" \
+    --post-hook "$POST_HOOK" \
+    --reloadcmd "docker compose -f /opt/remnanode/nginx/docker-compose.yml restart && docker compose -f /opt/remnanode/docker-compose.yml restart"
+
+CRON_JOB="0 0 * * * \"${HOME}/.acme.sh\"/acme.sh --cron --home \"${HOME}/.acme.sh\" > /dev/null"
+(crontab -l 2>/dev/null | grep -F "acme.sh --cron" || (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -)
+
+echo "Cron task successfully configured/verified."
 
 echo "--- 4. Setting up  $SERVICE_NAME ---"
 
