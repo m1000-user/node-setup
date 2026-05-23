@@ -173,20 +173,6 @@ else
     
 fi
 
-echo "Configuring automatic renewal via crontab..."
-
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-    --key-file "$CERT_KEY" \
-    --fullchain-file "$CERT_PEM" \
-    --pre-hook "$PRE_HOOK" \
-    --post-hook "$POST_HOOK" \
-    --reloadcmd "docker compose -f /opt/remnanode/nginx/docker-compose.yml restart && docker compose -f /opt/remnanode/docker-compose.yml restart"
-
-CRON_JOB="0 0 * * * \"${HOME}/.acme.sh\"/acme.sh --cron --home \"${HOME}/.acme.sh\" > /dev/null"
-(crontab -l 2>/dev/null | grep -F "acme.sh --cron" || (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -)
-
-echo "Cron task successfully configured/verified."
-
 echo "--- 4. Setting up  $SERVICE_NAME ---"
 
 cat <<EOF > "/opt/$SERVICE_NAME/docker-compose.yml"
@@ -286,6 +272,20 @@ sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw allow 2222/tcp
 sudo ufw --force enable
+
+echo "Configuring automatic renewal via crontab..."
+
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+    --key-file "$CERT_KEY" \
+    --fullchain-file "$CERT_PEM" \
+    --pre-hook "$PRE_HOOK" \
+    --post-hook "$POST_HOOK" \
+    --reloadcmd "docker compose -f /opt/remnanode/nginx/docker-compose.yml restart && docker compose -f /opt/remnanode/docker-compose.yml restart"
+
+CRON_JOB="0 0 * * * \"${HOME}/.acme.sh\"/acme.sh --cron --home \"${HOME}/.acme.sh\" > /dev/null"
+(crontab -l 2>/dev/null | grep -F "acme.sh --cron" || (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -)
+
+echo "Cron task successfully configured/verified."
 
 echo "--- [8/8] Installing WARP CLI ---"
 chmod +x warp.sh
