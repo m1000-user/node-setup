@@ -6,6 +6,198 @@ set -e
 ENV_FILE=".env"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+setup_raw_reality() {
+    echo "--- Select raw REALITY ---"
+    echo "--- 5. Configuring Nginx Proxy ---"
+
+    cat <<EOF > /opt/remnanode/nginx/nginx.conf
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
+    server_name $DOMAIN;
+    http2 on;
+
+    ssl_certificate /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+    }
+}
+EOF
+
+    cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
+services:
+  nginx:
+    image: nginx:latest
+    container_name: remnanode-proxy
+    restart: always
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
+EOF
+
+    docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
+
+    echo "--- 6. Installing Remnanode ---"
+
+    cat <<EOF > /opt/remnanode/docker-compose.yml
+services:
+  remnanode:
+    container_name: remnanode
+    hostname: remnanode
+    image: remnawave/node:latest
+    network_mode: host
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    environment:
+      - NODE_PORT=2222
+      - SECRET_KEY="$SECRET_KEY"
+EOF
+
+    docker compose -f "/opt/remnanode/docker-compose.yml" up -d
+}
+
+setup_xhttp() {
+    echo "--- Select XHTTP ---"
+
+    ask_variable "XHTTP_PATH" "XHTTP Location Path (e.g., /api/fluffy/)"
+    
+    XHTTP_PATH=${XHTTP_PATH:-/xhttppath/}
+    
+    [[ "$XHTTP_PATH" != /* ]] && XHTTP_PATH="/$XHTTP_PATH"
+    [[ "$XHTTP_PATH" != */ ]] && XHTTP_PATH="$XHTTP_PATH/"
+    
+    echo "XHTTP_PATH=$XHTTP_PATH" >> "$ENV_FILE"
+
+    echo "--- 5. Configuring Nginx Proxy ---"
+
+    cat <<EOF > /opt/remnanode/nginx/nginx.conf
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $DOMAIN;
+    http2 on;
+
+    ssl_certificate /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.key;
+    
+    location $XHTTP_PATH {
+        client_max_body_size 0;
+
+        proxy_buffering off;
+        proxy_request_buffering off; 
+
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        
+        proxy_set_header Host \$host;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "keep-alive";
+
+        client_body_timeout 5m;
+        proxy_read_timeout 315s;
+        proxy_send_timeout 5m;
+        proxy_pass http://unix:/dev/shm/xrxh.socket;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+    }
+}
+EOF
+
+    cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
+services:
+  nginx:
+    image: nginx:latest
+    container_name: remnanode-proxy
+    restart: always
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
+EOF
+
+    docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
+
+    echo "--- 6. Installing Remnanode ---"
+
+    cat <<EOF > /opt/remnanode/docker-compose.yml
+services:
+  remnanode:
+    container_name: remnanode
+    hostname: remnanode
+    image: remnawave/node:latest
+    network_mode: host
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+      - /var/log/remnanode:/var/log/remnanode
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    environment:
+      - NODE_PORT=2222
+      - SECRET_KEY="$SECRET_KEY"
+EOF
+
+    docker compose -f "/opt/remnanode/docker-compose.yml" up -d
+}
+
 # --- SERVICES LIST ---
 # Format: "Name|Image|Internal_Port"
 SERVICES=(
@@ -58,7 +250,6 @@ SELECTED_SERVICE=""
 if [ ! -z "$SERVICE_NAME" ]; then
     read -p "Saved service is '$SERVICE_NAME'. Use previous? [Y/n]: " use_old_service
     if [[ "$use_old_service" =~ ^[Yy]$ || -z "$use_old_service" ]]; then
-        # Ищем строку сервиса в массиве по имени
         for s in "${SERVICES[@]}"; do
             if [[ "$(echo "$s" | cut -d'|' -f1)" == "$SERVICE_NAME" ]]; then
                 SELECTED_SERVICE="$s"
@@ -161,16 +352,41 @@ CERT_PEM="/opt/remnanode/nginx/fullchain.pem"
 PRE_HOOK="ufw allow 8443/tcp && ufw reload"
 POST_HOOK="ufw delete allow 8443/tcp && ufw reload"
 
+ACME_ECC_DIR="${HOME}/.acme.sh/${DOMAIN}_ecc"
+ACME_RSA_DIR="${HOME}/.acme.sh/${DOMAIN}"
+
 if [ -f "$CERT_PEM" ] && [ -f "$CERT_KEY" ]; then
     echo "SSL certificates already exist at $CERT_PEM. Skipping initial issuance."
-else
-    echo "No existing certificates found."
 
-    ~/.acme.sh/acme.sh --issue --standalone -d "$DOMAIN" \
+elif [ -f "$ACME_ECC_DIR/fullchain.cer" ] && [ -f "$ACME_ECC_DIR/${DOMAIN}.key" ]; then
+    echo "Certificate for $DOMAIN already exists in acme.sh cache. Installing to Nginx directory..."
+    ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
         --key-file "$CERT_KEY" \
         --fullchain-file "$CERT_PEM" \
-        --alpn --tlsport 8443
+        --ecc
+
+elif [ -f "$ACME_RSA_DIR/fullchain.cer" ] && [ -f "$ACME_RSA_DIR/${DOMAIN}.key" ]; then
+    echo "RSA Certificate for $DOMAIN already exists in acme.sh cache. Installing to Nginx directory..."
+    ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+        --key-file "$CERT_KEY" \
+        --fullchain-file "$CERT_PEM"
+
+else
+    echo "No existing certificates found. Issuing a new one via standalone ALPN..."
     
+    if ! ~/.acme.sh/acme.sh --issue --standalone -d "$DOMAIN" \
+        --key-file "$CERT_KEY" \
+        --fullchain-file "$CERT_PEM" \
+        --alpn --tlsport 8443; then
+        
+        if [ -f "$ACME_ECC_DIR/fullchain.cer" ]; then
+            echo "Issue reported an error, but certificate files were found. Copying..."
+            ~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" --key-file "$CERT_KEY" --fullchain-file "$CERT_PEM" --ecc
+        else
+            echo "Error: Failed to issue SSL certificate."
+            exit 1
+        fi
+    fi
 fi
 
 echo "--- 4. Setting up  $SERVICE_NAME ---"
@@ -187,83 +403,27 @@ EOF
 
 docker compose -f "/opt/$SERVICE_NAME/docker-compose.yml" up -d
 
-echo "--- 5. Configuring Nginx Proxy ---"
+echo "================================================"
+echo " Choose Selfsteal for installation:"
+echo " 1) Raw REALITY (default)"
+echo " 2) XHTTP"
+echo "================================================"
+read -p "Enter choice [1 default]: " STEAL_CHOICE
 
-cat <<EOF > /opt/remnanode/nginx/nginx.conf
-map \$http_upgrade \$connection_upgrade {
-    default upgrade;
-    ''      close;
-}
+STEAL_CHOICE=${STEAL_CHOICE:-1}
 
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
-    server_name $DOMAIN;
-    http2 on;
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.key;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$connection_upgrade;
-    }
-}
-EOF
-
-cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
-services:
-  nginx:
-    image: nginx:latest
-    container_name: remnawave-proxy
-    restart: always
-    network_mode: host
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
-EOF
-
-docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
-
-echo "--- 6. Installing Remnanode ---"
-
-cat <<EOF > /opt/remnanode/docker-compose.yml
-services:
-  remnanode:
-    container_name: remnanode
-    hostname: remnanode
-    image: remnawave/node:latest
-    network_mode: host
-    restart: always
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-    ulimits:
-      nofile:
-        soft: 1048576
-        hard: 1048576
-    environment:
-      - NODE_PORT=2222
-      - SECRET_KEY="$SECRET_KEY"
-EOF
-
-docker compose -f "/opt/remnanode/docker-compose.yml" up -d
+case "$STEAL_CHOICE" in
+    1)
+        setup_raw_reality
+        ;;
+    2)
+        setup_xhttp
+        ;;
+    *)
+        echo "Неверный ввод. По умолчанию выбираем Raw REALITY."
+        setup_raw_reality
+        ;;
+esac
 
 echo "--- 7. Configuring Firewall ---"
 
@@ -300,93 +460,93 @@ echo "Checking WARP SOCKS5 proxy..."
 curl -s --connect-timeout 4 --max-time 6 -x socks5h://127.0.0.1:40000 ifconfig.me
 echo ""
 echo "------------------------------------------------"
-read -p "Do you want to generate a ready-to-use Xray-core server config (VLESS+REALITY)? [y/N]: " SHOW_CONFIG
+# read -p "Do you want to generate a ready-to-use Xray-core server config (VLESS+REALITY)? [y/N]: " SHOW_CONFIG
 
-if [[ "$SHOW_CONFIG" =~ ^[Yy]$ ]]; then
-    echo "Generating REALITY keys and shortIds..."
+# if [[ "$SHOW_CONFIG" =~ ^[Yy]$ ]]; then
+#     echo "Generating REALITY keys and shortIds..."
     
-    KEYS=$(docker exec remnanode xray x25519 2>/dev/null)
+#     KEYS=$(docker exec remnanode xray x25519 2>/dev/null)
     
-    PRIVATE_KEY=$(echo "$KEYS" | grep "Private key:" | awk '{print $3}')
+#     PRIVATE_KEY=$(echo "$KEYS" | grep "Private key:" | awk '{print $3}')
     
-    SHORT_ID=$(openssl rand -hex 8)
+#     SHORT_ID=$(openssl rand -hex 8)
 
-    echo -e "\n=== GENERATED XRAY SERVER CONFIG ==="
-    cat <<EOF
-{
-  "log": {
-    "loglevel": "none"
-  },
-  "dns": {
-    "tag": "dns_inbound",
-    "servers": [
-      "9.9.9.9",
-      "149.112.112.112"
-    ],
-    "queryStrategy": "UseIPv4"
-  },
-  "inbounds": [
-    {
-      "tag": "TAG",
-      "port": 443,
-      "listen": "0.0.0.0",
-      "protocol": "vless",
-      "settings": {
-        "clients": [],
-        "decryption": "none"
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls",
-          "quic"
-        ]
-      },
-      "streamSettings": {
-        "network": "raw",
-        "security": "reality",
-        "realitySettings": {
-          "xver": 1,
-          "target": "/dev/shm/nginx.sock",
-          "shortIds": [
-            "$SHORT_ID"
-          ],
-          "privateKey": "$PRIVATE_KEY",
-          "serverNames": [
-            "$DOMAIN"
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "tag": "DIRECT",
-      "protocol": "freedom"
-    },
-    {
-      "tag": "BLOCK",
-      "protocol": "blackhole"
-    },
-    {
-      "tag": "warp",
-      "protocol": "socks",
-      "settings": {
-        "servers": [
-          {
-            "port": 40000,
-            "address": "127.0.0.1"
-          }
-        ]
-      }
-    }
-  ],
-  "routing": {
-    "rules": [
-    ]
-  }
-}
-EOF
-    echo -e "=====================================\n"
-fi
+#     echo -e "\n=== GENERATED XRAY SERVER CONFIG ==="
+#     cat <<EOF
+# {
+#   "log": {
+#     "loglevel": "none"
+#   },
+#   "dns": {
+#     "tag": "dns_inbound",
+#     "servers": [
+#       "9.9.9.9",
+#       "149.112.112.112"
+#     ],
+#     "queryStrategy": "UseIPv4"
+#   },
+#   "inbounds": [
+#     {
+#       "tag": "TAG",
+#       "port": 443,
+#       "listen": "0.0.0.0",
+#       "protocol": "vless",
+#       "settings": {
+#         "clients": [],
+#         "decryption": "none"
+#       },
+#       "sniffing": {
+#         "enabled": true,
+#         "destOverride": [
+#           "http",
+#           "tls",
+#           "quic"
+#         ]
+#       },
+#       "streamSettings": {
+#         "network": "raw",
+#         "security": "reality",
+#         "realitySettings": {
+#           "xver": 1,
+#           "target": "/dev/shm/nginx.sock",
+#           "shortIds": [
+#             "$SHORT_ID"
+#           ],
+#           "privateKey": "$PRIVATE_KEY",
+#           "serverNames": [
+#             "$DOMAIN"
+#           ]
+#         }
+#       }
+#     }
+#   ],
+#   "outbounds": [
+#     {
+#       "tag": "DIRECT",
+#       "protocol": "freedom"
+#     },
+#     {
+#       "tag": "BLOCK",
+#       "protocol": "blackhole"
+#     },
+#     {
+#       "tag": "warp",
+#       "protocol": "socks",
+#       "settings": {
+#         "servers": [
+#           {
+#             "port": 40000,
+#             "address": "127.0.0.1"
+#           }
+#         ]
+#       }
+#     }
+#   ],
+#   "routing": {
+#     "rules": [
+#     ]
+#   }
+# }
+# EOF
+#     echo -e "=====================================\n"
+# fi
