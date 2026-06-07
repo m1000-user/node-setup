@@ -90,7 +90,7 @@ EOF
 setup_xhttp() {
     echo "--- Select XHTTP ---"
 
-    ask_variable "XHTTP_PATH" "XHTTP Location Path (e.g., /api/fluffy/)"
+    ask_variable "XHTTP_PATH" "XHTTP Location Path (e.g., /xhttppath/)"
     
     XHTTP_PATH=${XHTTP_PATH:-/xhttppath/}
     
