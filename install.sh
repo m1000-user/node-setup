@@ -6,198 +6,6 @@ set -e
 ENV_FILE=".env"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-setup_raw_reality() {
-    echo "--- Select raw REALITY ---"
-    echo "--- 5. Configuring Nginx Proxy ---"
-
-    cat <<EOF > /opt/remnanode/nginx/nginx.conf
-map \$http_upgrade \$connection_upgrade {
-    default upgrade;
-    ''      close;
-}
-
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
-    server_name $DOMAIN;
-    http2 on;
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.key;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$connection_upgrade;
-    }
-}
-EOF
-
-    cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
-services:
-  nginx:
-    image: nginx:latest
-    container_name: remnanode-proxy
-    restart: always
-    network_mode: host
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
-EOF
-
-    docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
-
-    echo "--- 6. Installing Remnanode ---"
-
-    cat <<EOF > /opt/remnanode/docker-compose.yml
-services:
-  remnanode:
-    container_name: remnanode
-    hostname: remnanode
-    image: remnawave/node:latest
-    network_mode: host
-    restart: always
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-    ulimits:
-      nofile:
-        soft: 1048576
-        hard: 1048576
-    environment:
-      - NODE_PORT=2222
-      - SECRET_KEY="$SECRET_KEY"
-EOF
-
-    docker compose -f "/opt/remnanode/docker-compose.yml" up -d
-}
-
-setup_xhttp() {
-    echo "--- Select XHTTP ---"
-
-    ask_variable "XHTTP_PATH" "XHTTP Location Path (e.g., /xhttppath/)"
-    
-    XHTTP_PATH=${XHTTP_PATH:-/xhttppath/}
-    
-    [[ "$XHTTP_PATH" != /* ]] && XHTTP_PATH="/$XHTTP_PATH"
-    [[ "$XHTTP_PATH" != */ ]] && XHTTP_PATH="$XHTTP_PATH/"
-    
-    echo "XHTTP_PATH=$XHTTP_PATH" >> "$ENV_FILE"
-
-    echo "--- 5. Configuring Nginx Proxy ---"
-
-    cat <<EOF > /opt/remnanode/nginx/nginx.conf
-map \$http_upgrade \$connection_upgrade {
-    default upgrade;
-    ''      close;
-}
-
-server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name $DOMAIN;
-    http2 on;
-
-    ssl_certificate /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.key;
-    
-    location $XHTTP_PATH {
-        client_max_body_size 0;
-
-        proxy_buffering off;
-        proxy_request_buffering off; 
-
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        
-        proxy_set_header Host \$host;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "keep-alive";
-
-        client_body_timeout 5m;
-        proxy_read_timeout 315s;
-        proxy_send_timeout 5m;
-        proxy_pass http://unix:/dev/shm/xrxh.socket;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$connection_upgrade;
-    }
-}
-EOF
-
-    cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
-services:
-  nginx:
-    image: nginx:latest
-    container_name: remnanode-proxy
-    restart: always
-    network_mode: host
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
-EOF
-
-    docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
-
-    echo "--- 6. Installing Remnanode ---"
-
-    cat <<EOF > /opt/remnanode/docker-compose.yml
-services:
-  remnanode:
-    container_name: remnanode
-    hostname: remnanode
-    image: remnawave/node:latest
-    network_mode: host
-    restart: always
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
-      - /dev/shm:/dev/shm:rw
-      - /var/log/remnanode:/var/log/remnanode
-    ulimits:
-      nofile:
-        soft: 1048576
-        hard: 1048576
-    environment:
-      - NODE_PORT=2222
-      - SECRET_KEY="$SECRET_KEY"
-EOF
-
-    docker compose -f "/opt/remnanode/docker-compose.yml" up -d
-}
-
 # --- SERVICES LIST ---
 # Format: "Name|Image|Internal_Port"
 SERVICES=(
@@ -404,26 +212,132 @@ EOF
 docker compose -f "/opt/$SERVICE_NAME/docker-compose.yml" up -d
 
 echo "================================================"
-echo " Choose Selfsteal for installation:"
-echo " 1) Raw REALITY (default)"
-echo " 2) XHTTP"
-echo "================================================"
-read -p "Enter choice [1 default]: " STEAL_CHOICE
+ask_variable "XHTTP_PATH" "XHTTP Location Path (e.g., /xhttppath/)"
+ask_variable "GRPC_PATH" "gRPC Service Name/Path (e.g., /grpcpath)"
 
-STEAL_CHOICE=${STEAL_CHOICE:-1}
+    XHTTP_PATH=${XHTTP_PATH:-/xhttppath/}
+    GRPC_PATH=${GRPC_PATH:-/grpcpath}
 
-case "$STEAL_CHOICE" in
-    1)
-        setup_raw_reality
-        ;;
-    2)
-        setup_xhttp
-        ;;
-    *)
-        echo "Неверный ввод. По умолчанию выбираем Raw REALITY."
-        setup_raw_reality
-        ;;
-esac
+    [[ "$XHTTP_PATH" != /* ]] && XHTTP_PATH="/$XHTTP_PATH"
+    [[ "$XHTTP_PATH" != */ ]] && XHTTP_PATH="$XHTTP_PATH/"
+    
+    [[ "$GRPC_PATH" != /* ]] && GRPC_PATH="/$GRPC_PATH"
+
+    echo "XHTTP_PATH=$XHTTP_PATH" >> "$ENV_FILE"
+    echo "GRPC_PATH=$GRPC_PATH" >> "$ENV_FILE"
+
+    echo "--- 5. Configuring Nginx Proxy ---"
+
+    cat <<EOF > /opt/remnanode/nginx/nginx.conf
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
+    server_name $DOMAIN;
+    http2 on;
+
+    ssl_certificate /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.key;
+    
+    location $XHTTP_PATH {
+        client_max_body_size 0;
+
+        proxy_buffering off;
+        proxy_request_buffering off; 
+
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        
+        proxy_set_header Host \$host;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "keep-alive";
+
+        client_body_timeout 5m;
+        proxy_read_timeout 315s;
+        proxy_send_timeout 5m;
+        proxy_pass http://unix:/dev/shm/xrxh.socket;
+    }
+
+    location $GRPC_PATH {
+        client_max_body_size 0;
+        
+        client_body_timeout 5m;
+        grpc_set_header X-Real-IP \$proxy_protocol_addr;
+        grpc_set_header X-Forwarded-For \$proxy_protocol_addr;
+        grpc_set_header Host \$host;
+        grpc_socket_keepalive on;
+        grpc_read_timeout 315s;
+        grpc_send_timeout 5m;
+        
+        grpc_pass grpc://unix:/dev/shm/grpc.socket;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+    }
+}
+EOF
+
+    cat <<EOF > /opt/remnanode/nginx/docker-compose.yml
+services:
+  nginx:
+    image: nginx:latest
+    container_name: remnanode-proxy
+    restart: always
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ./privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+    command: sh -c 'rm -f /dev/shm/nginx.sock && exec nginx -g "daemon off;"'
+EOF
+
+    docker compose -f "/opt/remnanode/nginx/docker-compose.yml" up -d
+
+    echo "--- 6. Installing Remnanode ---"
+
+    cat <<EOF > /opt/remnanode/docker-compose.yml
+services:
+  remnanode:
+    container_name: remnanode
+    hostname: remnanode
+    image: remnawave/node:latest
+    network_mode: host
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /opt/remnanode/nginx/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - /opt/remnanode/nginx/privkey.key:/etc/nginx/certs/privkey.key:ro
+      - /dev/shm:/dev/shm:rw
+      - /var/log/remnanode:/var/log/remnanode
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    environment:
+      - NODE_PORT=2222
+      - SECRET_KEY="$SECRET_KEY"
+EOF
+
+    docker compose -f "/opt/remnanode/docker-compose.yml" up -d
+
 
 echo "--- 7. Configuring Firewall ---"
 
